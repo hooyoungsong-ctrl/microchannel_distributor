@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2상 마이크로채널 유량 분배기</title>
+<style>
+  :root{
+    --bg:#ffffff;--panel:#f4f6f8;--line:#c8d0d8;--ink:#1a2028;--muted:#3a4654;--dim:#4a5562;
+    --flow:#0e7fb5;--flow-soft:#b0d8ee;--heat:#d45a1a;--warn:#b07800;--danger:#c0281a;--ok:#1a7a4a;
+    --c0:#5b6775;--c1:#5b3fc0;--c2:#0e7fb5;--c4:#0a9eaa;--c6:#1a7a4a;--c8:#b07800;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;
+    font-family:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 18px 60px}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+  h1{font-size:18px;font-weight:650;margin:0}
+  .sub{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--muted)}
+  .tag{font-family:ui-monospace,monospace;font-size:10.5px;color:var(--flow);
+    border:1px solid var(--flow-soft);border-radius:3px;padding:2px 7px}
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:18px}
+  @media(max-width:780px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
+  .panel h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--muted);margin:0 0 14px}
+  .selrow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;
+    padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .selrow label{display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px}
+  select{width:100%;background:#ffffff;color:var(--ink);border:1px solid var(--line);
+    border-radius:5px;padding:7px 8px;font-size:12.5px;font-family:ui-monospace,monospace}
+  select:focus-visible{outline:2px solid var(--flow);outline-offset:1px}
+  input[type=number]{width:100%;background:#ffffff;color:var(--ink);border:1px solid var(--line);
+    border-radius:5px;padding:7px 8px;font-size:13px;font-family:ui-monospace,monospace}
+  input[type=number]:focus-visible{outline:2px solid var(--flow);outline-offset:1px}
+  .ctrl{margin-bottom:17px}.ctrl:last-child{margin-bottom:0}
+  .ctrl .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .ctrl label{font-size:12.5px}
+  .ctrl .val{font-family:ui-monospace,monospace;font-size:13px;color:var(--flow);font-weight:600}
+  .ctrl .val.heat{color:var(--heat)}
+  input[type=range]{-webkit-appearance:none;width:100%;height:3px;border-radius:2px;background:var(--line);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--flow);cursor:pointer;border:2px solid var(--bg);box-shadow:0 0 0 1px var(--flow)}
+  input[type=range].heat::-webkit-slider-thumb{background:var(--heat);box-shadow:0 0 0 1px var(--heat)}
+  input[type=range]:focus-visible::-webkit-slider-thumb{outline:2px solid #333;outline-offset:2px}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--flow);border:2px solid var(--bg)}
+  .hint{font-family:ui-monospace,monospace;font-size:10px;color:var(--dim);margin-top:5px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+  @media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 12px}
+  .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .stat .v{font-family:ui-monospace,monospace;font-size:19px;font-weight:600;margin-top:3px}
+  .stat .v .u{font-size:10px;color:var(--dim);margin-left:3px;font-weight:400}
+  .stat .v2{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);margin-top:2px}
+  .stat.accent .v{color:var(--flow)}.stat.hot .v{color:var(--heat)}
+  .chartbox{background:#ffffff;border:1px solid var(--line);border-radius:8px;padding:14px 16px 8px;margin-bottom:14px}
+  .chartbox .cap{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;flex-wrap:wrap;gap:4px}
+  .chartbox .cap .t{font-size:12px;font-weight:600}
+  .chartbox .cap .leg{font-family:ui-monospace,monospace;font-size:10px;color:var(--muted)}
+  .chartbox .cap .leg b{color:var(--heat)}
+  canvas{width:100%;display:block}
+  .status{font-family:ui-monospace,monospace;font-size:12px;padding:9px 13px;border-radius:6px;border:1px solid;display:flex;gap:9px;align-items:center}
+  .status.ok{color:var(--ok);border-color:#a0d4b8;background:#e8f6ee}
+  .status.warn{color:var(--warn);border-color:#e0c060;background:#fdf6dc}
+  .status.danger{color:var(--danger);border-color:#e0a0a0;background:#fdeaea}
+  .status .dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+  footer{margin-top:22px;border-top:1px solid var(--line);padding-top:14px;
+    font-family:ui-monospace,monospace;font-size:10.5px;color:var(--dim);line-height:1.7}
+  footer b{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>2상 마이크로채널 유량 분배기</h1>
+    <span class="sub" id="cond">250ch · 셀프 레귤레이팅</span>
+    <span class="tag" id="modeTag">HOTSPOT ON</span>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>입력</h2>
+      <div class="selrow">
+        <div><label for="fluid">냉매</label>
+          <select id="fluid">
+            <option value="R1233zd(E)">R-1233zd(E)</option>
+            <option value="R1336mzz(E)" selected>R-1336mzz(E)</option>
+            <option value="R515B">R-515B</option>
+          </select></div>
+        <div><label for="tsat">포화온도</label>
+          <select id="tsat">
+            <option>30</option><option>35</option><option>40</option><option>45</option>
+            <option selected>50</option><option>55</option><option>60</option>
+          </select></div>
+      </div>
+      <div class="ctrl">
+        <div class="top"><label for="q">발열량 (균일)</label><span class="val heat" id="qv">3000 W</span></div>
+        <input class="heat" type="range" id="q" min="0" max="4000" step="100" value="3000">
+        <div class="hint">채널당 <span id="qch">12.0</span> W</div>
+      </div>
+      <div class="ctrl">
+        <div class="top"><label for="x">목표 출구건도 (정상채널)</label><span class="val" id="xv">0.60</span></div>
+        <input type="range" id="x" min="0.1" max="0.8" step="0.05" value="0.6">
+        <div class="hint">동작점·매니폴드 Δp 결정</div>
+      </div>
+      <div class="ctrl">
+        <div class="top"><label for="orf">입구 오리피스 Δp</label><span class="val" id="orfv">20 kPa</span></div>
+        <input type="range" id="orf" min="0" max="80" step="1" value="20">
+        <div class="hint">정상유량 기준 · 클수록 starvation 억제</div>
+      </div>
+      <div class="ctrl">
+        <div class="top"><label for="caldp">2상 마찰 보정 배수</label><span class="val" id="calv">1.00 ×</span></div>
+        <input type="number" id="caldp" min="0.2" max="6" step="0.05" value="1">
+        <div class="hint">K&M(2013) φ_f²에 곱함 · 선택냉매 50°C/3000W/x0.6 채널Δp=<span id="cfout">—</span>kPa</div>
+      </div>
+      <div class="ctrl">
+        <div class="top"><label for="hf">핫스팟 열유속 (중앙 5×5mm)</label><span class="val heat" id="hfv">200 W/cm&sup2;</span></div>
+        <input class="heat" type="range" id="hf" min="0" max="400" step="25" value="200">
+        <div class="hint">0 = 끔 · 균일발열에 가산</div>
+      </div>
+      <div class="ctrl">
+        <div class="top"><label for="sp">측면 열확산 σ</label><span class="val" id="spv">0 ch</span></div>
+        <input type="range" id="sp" min="0" max="20" step="1" value="0">
+        <div class="hint">베이스/핀 횡전도 (폭 확산)</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="stats">
+        <div class="stat accent"><div class="k">매니폴드 Δp</div><div class="v"><span id="sDp">—</span><span class="u">kPa</span></div><div class="v2">채널 <span id="sCh">—</span> + 오리피스 <span id="sOr">—</span></div></div>
+        <div class="stat accent"><div class="k">총유량</div><div class="v"><span id="sTot">—</span><span class="u">g/s</span></div><div class="v2"><span id="sLpm">—</span> LPM</div></div>
+        <div class="stat"><div class="k">정상채널 ṁ</div><div class="v"><span id="sNom">—</span><span class="u">mg/s</span></div><div class="v2">x = <span id="sXn">—</span></div></div>
+        <div class="stat hot"><div class="k">최저유량 채널</div><div class="v"><span id="sWorst">—</span><span class="u">mg/s</span></div><div class="v2">x = <span id="sXw">—</span></div></div>
+      </div>
+
+      <div class="chartbox">
+        <div class="cap"><span class="t">채널별 self-regulating 유량 (1–250)</span>
+          <span class="leg">▮ 정상 &nbsp; <b>▮ 핫스팟</b></span></div>
+        <canvas id="flow" height="180"></canvas>
+      </div>
+      <div class="chartbox">
+        <div class="cap"><span class="t">채널별 출구건도 x</span><span class="leg">— dryout 0.9</span></div>
+        <canvas id="qual" height="130"></canvas>
+      </div>
+      <div class="chartbox">
+        <div class="cap"><span class="t">채널 Δp – 발열량 (출구건도별, 오리피스 제외)</span>
+          <span class="leg" id="dqleg"></span></div>
+        <canvas id="dpq" height="220"></canvas>
+      </div>
+
+      <div class="status" id="status"><span class="dot"></span><span id="statusTxt">—</span></div>
+    </div>
+  </div>
+
+  <footer>
+    <b>2상 마찰</b> — Kim & Mudawar(2013) 분리류 φ_f²=1+C/X+1/X², C는 액·기상 층류/난류 4분기별 Re_fo·Su_go·밀도비 함수(Fanning f, X=Martinelli). 입력한 보정 배수를 φ_f²항에 곱함(가속·단상·오리피스 제외).<br>
+    <b>가정</b> — K&M 2상마찰+균질 가속 / 공통 매니폴드 Δp 이상화(헤더손실 무시) / 5K 서브쿨 / 핫스팟=균일발열 가산, 중앙25ch×길이중앙5mm.<br>
+    <b>추정값</b> — R-1336mzz(E) 수송물성(μ,σ) · R-515B는 BIP=linear 혼합근사 · CHF는 x≥0.9 단순플래그. REFPROP/실측으로 확정 권장.
+  </footer>
+</div>
+
+<script>
+const PROPS={"R1233zd(E)":{"30":{"P":154715,"rhol":1250.58,"rhov":8.508,"hfg":188517.7,"cpl":1224.3,"mul":0.000433407,"muv":1.1294e-05,"sig":0.01383},"35":{"P":183186,"rhol":1238.19,"rhov":9.989,"hfg":185820.7,"cpl":1233.0,"mul":0.000408122,"muv":1.1492e-05,"sig":0.013182},"40":{"P":215549,"rhol":1225.6,"rhov":11.664,"hfg":183058.7,"cpl":1242.1,"mul":0.00038462,"muv":1.1691e-05,"sig":0.012541},"45":{"P":252143,"rhol":1212.77,"rhov":13.555,"hfg":180226.3,"cpl":1251.6,"mul":0.000362719,"muv":1.1892e-05,"sig":0.011907},"50":{"P":293320,"rhol":1199.71,"rhov":15.68,"hfg":177317.7,"cpl":1261.6,"mul":0.000342262,"muv":1.2096e-05,"sig":0.01128},"55":{"P":339443,"rhol":1186.38,"rhov":18.062,"hfg":174326.8,"cpl":1272.2,"mul":0.000323111,"muv":1.2302e-05,"sig":0.010661},"60":{"P":390882,"rhol":1172.76,"rhov":20.726,"hfg":171246.8,"cpl":1283.3,"mul":0.000305145,"muv":1.2513e-05,"sig":0.01005}},"R1336mzz(E)":{"30":{"P":229798,"rhol":1310.07,"rhov":16.404,"hfg":141680.0,"cpl":1250.9,"mul":0.00033,"muv":1.1e-05,"sig":0.0095},"35":{"P":271214,"rhol":1294.12,"rhov":19.281,"hfg":138819.8,"cpl":1258.8,"mul":0.000315,"muv":1.125e-05,"sig":0.009},"40":{"P":318123,"rhol":1277.67,"rhov":22.554,"hfg":135871.4,"cpl":1267.6,"mul":0.0003,"muv":1.15e-05,"sig":0.0085},"45":{"P":370990,"rhol":1260.66,"rhov":26.27,"hfg":132824.2,"cpl":1277.3,"mul":0.000285,"muv":1.175e-05,"sig":0.008},"50":{"P":430295,"rhol":1243.03,"rhov":30.48,"hfg":129666.9,"cpl":1288.0,"mul":0.00027,"muv":1.2e-05,"sig":0.0075},"55":{"P":496535,"rhol":1224.71,"rhov":35.242,"hfg":126386.7,"cpl":1299.9,"mul":0.000255,"muv":1.225e-05,"sig":0.007},"60":{"P":570227,"rhol":1205.61,"rhov":40.627,"hfg":122969.2,"cpl":1313.3,"mul":0.00024,"muv":1.25e-05,"sig":0.0065}},"R515B":{"30":{"P":574363,"rhol":1163.46,"rhov":31.23,"hfg":158254.6,"cpl":1384.6,"mul":0.00018103,"muv":1.2612e-05,"sig":0.0095},"35":{"P":662901,"rhol":1145.95,"rhov":36.098,"hfg":154313.1,"cpl":1403.5,"mul":0.000170205,"muv":1.2857e-05,"sig":0.009},"40":{"P":761339,"rhol":1127.83,"rhov":41.596,"hfg":150184.7,"cpl":1424.5,"mul":0.000159991,"muv":1.3111e-05,"sig":0.0085},"45":{"P":870374,"rhol":1109.0,"rhov":47.807,"hfg":145847.3,"cpl":1447.9,"mul":0.000150336,"muv":1.3377e-05,"sig":0.008},"50":{"P":990727,"rhol":1089.37,"rhov":54.829,"hfg":141274.8,"cpl":1474.2,"mul":0.000141188,"muv":1.3657e-05,"sig":0.0075},"55":{"P":1123151,"rhol":1068.81,"rhov":62.781,"hfg":136436.0,"cpl":1504.2,"mul":0.000132502,"muv":1.3957e-05,"sig":0.007},"60":{"P":1268430,"rhol":1047.18,"rhov":71.809,"hfg":131293.4,"cpl":1538.9,"mul":0.000124235,"muv":1.4282e-05,"sig":0.0065}}};
+let Cf=1.0;  // two-phase friction correction multiplier (direct input)
+// Kim & Mudawar (2013) separated-flow two-phase friction: phi_f^2 = 1 + C/X + 1/X^2
+function fanning(Re){return Re<2000?16/Re:Re<20000?0.079*Math.pow(Re,-0.25):0.046*Math.pow(Re,-0.2);}
+function dpdz2ph(G,x){
+  const rl=M.rhol,rv=M.rhov,ml=M.mul,mv=M.muv,sg=M.sig,D=GE.Dh;
+  const xx=Math.min(x,0.99), Gf=G*(1-xx), Gg=G*xx;
+  const Ref=Math.max(Gf*D/ml,1e-6), Reg=Math.max(Gg*D/mv,1e-6);
+  const dpf=2*fanning(Ref)*Gf*Gf/(rl*D), dpg=2*fanning(Reg)*Gg*Gg/(rv*D);
+  const X2=dpf/dpg, X=Math.sqrt(X2);
+  const Refo=G*D/ml, Sugo=rv*sg*D/(mv*mv), dr=rl/rv, lamF=Ref<2000, lamG=Reg<2000;
+  let C;
+  if(!lamF&&!lamG) C=0.39*Math.pow(Refo,0.03)*Math.pow(Sugo,0.10)*Math.pow(dr,0.35);
+  else if(!lamF&&lamG) C=8.7e-4*Math.pow(Refo,0.17)*Math.pow(Sugo,0.50)*Math.pow(dr,0.14);
+  else if(lamF&&!lamG) C=0.0015*Math.pow(Refo,0.59)*Math.pow(Sugo,0.19)*Math.pow(dr,0.36);
+  else C=3.5e-5*Math.pow(Refo,0.44)*Math.pow(Sugo,0.50)*Math.pow(dr,0.48);
+  return dpf*(1+C/X+1/X2);
+}
+// reference channel Δp (selected fluid, 50C/3000W/x0.6) for display/marker
+function refChannelDp(){
+  const save=M; M=PROPS[fluid.value]["50"];
+  const QchU=12,m=QchU/(0.6*M.hfg+M.cpl*dTsub),d=channelDp(m,QchU,0,0).bare;
+  M=save; return d;
+}
+const GE={A:0.3e-6,Dh:193.5e-6,L:50e-3,N:250,pitch:0.2e-3};
+const dTsub=5.0, HOTW=5e-3, NHOT=Math.round(HOTW/GE.pitch), DRYOUT=0.90;
+let M=PROPS["R1336mzz(E)"]["50"];
+
+const fF=Re=>Re<2300?64/Re:0.316*Math.pow(Re,-0.25);
+
+// channel Δp: single-phase friction + Cf*K&M two-phase friction + acceleration + orifice
+function channelDp(mdot,QchU,Qextra,K,nseg=80){
+  const rhol=M.rhol,rhov=M.rhov,hfg=M.hfg,cpl=M.cpl,mul=M.mul;
+  const vl=1/rhol,vv=1/rhov,G=mdot/GE.A,dz=GE.L/nseg,Qsub=mdot*cpl*dTsub,quni=QchU/GE.L;
+  const z0=(GE.L-HOTW)/2,z1=z0+HOTW;
+  let cumQ=0,dpSP=0,dp2P=0,x=0;
+  for(let i=0;i<nseg;i++){
+    const z=(i+0.5)*dz;
+    let qq=quni; if(Qextra>0 && z>=z0 && z<=z1) qq+=Qextra/HOTW;
+    cumQ+=qq*dz;
+    x = cumQ<=Qsub ? 0 : Math.min((cumQ-Qsub)/(mdot*hfg),1);
+    if(x<=0){const Re=G*GE.Dh/mul; dpSP+=2*fanning(Re)*G*G/(rhol*GE.Dh)*dz;}
+    else{ dp2P += dpdz2ph(G,x)*dz; }
+  }
+  const dpacc=G*G*((x*vv+(1-x)*vl)-vl), dpo=K*G*G/(2*rhol);
+  return {dp:dpSP+Cf*dp2P+dpacc+dpo, x, bare:dpSP+Cf*dp2P+dpacc};
+}
+function solveMdot(QchU,Qextra,K,Dpman){
+  let lo=1e-6,hi=8e-3;
+  for(let it=0;it<58;it++){const mid=0.5*(lo+hi);
+    if(channelDp(mid,QchU,Qextra,K).dp>Dpman)hi=mid;else lo=mid;}
+  return 0.5*(lo+hi);
+}
+function gaussianSmooth(arr,sigma){
+  if(sigma<0.5)return arr.slice();
+  const r=Math.ceil(sigma*3),ker=[];let s=0;
+  for(let k=-r;k<=r;k++){const w=Math.exp(-0.5*(k/sigma)**2);ker.push(w);s+=w;}
+  for(let i=0;i<ker.length;i++)ker[i]/=s;
+  const out=new Array(arr.length).fill(0);
+  for(let i=0;i<arr.length;i++){let a=0;for(let k=-r;k<=r;k++){const j=i+k;if(j>=0&&j<arr.length)a+=arr[j]*ker[k+r];}out[i]=a;}
+  const t0=arr.reduce((a,b)=>a+b,0),t1=out.reduce((a,b)=>a+b,0);
+  if(t1>0)for(let i=0;i<out.length;i++)out[i]*=t0/t1;
+  return out;
+}
+
+let R={mdot:[],x:[],band:[],mnom:0,xnom:0,Dpman:0,dpCh:0,dpOr:0,tot:0};
+
+function compute(){
+  M=PROPS[fluid.value][tsat.value];
+  Cf=+caldp.value;
+  const Quni=+q.value,xnom=+x.value,dpOrif=(+orf.value)*1e3,hflux=+hf.value,spread=+sp.value;
+  const QchU=Quni/GE.N;
+  const mnom = QchU>0 ? QchU/(xnom*M.hfg+M.cpl*dTsub) : 2e-3;
+  const Gnom=mnom/GE.A;
+  const K = Gnom>0 ? dpOrif*2*M.rhol/(Gnom*Gnom) : 0;
+  const dn=channelDp(mnom,QchU,0,K);
+  const Dpman=dn.dp;
+  // hotspot heat per channel
+  const Qhot=hflux*0.25;
+  const base=new Array(GE.N).fill(0);
+  if(Qhot>0){
+    const c=Math.floor(GE.N/2),h=Math.floor(NHOT/2);
+    for(let i=c-h;i<c-h+NHOT;i++) if(i>=0&&i<GE.N) base[i]=1;
+    const sm=gaussianSmooth(base,spread),ss=sm.reduce((a,b)=>a+b,0);
+    for(let i=0;i<GE.N;i++) base[i]= ss>0 ? Qhot*sm[i]/ss : 0;
+  }
+  const cache=new Map(),md=new Array(GE.N),xx=new Array(GE.N),band=new Array(GE.N);
+  for(let i=0;i<GE.N;i++){
+    const Qe=base[i]; band[i]=Qe>1e-4;
+    const key=Math.round(Qe*1e4); let m=cache.get(key);
+    if(m===undefined){m=solveMdot(QchU,Qe,K,Dpman);cache.set(key,m);}
+    md[i]=m; xx[i]=channelDp(m,QchU,Qe,K).x;
+  }
+  R={mdot:md,x:xx,band,mnom,xnom,Dpman,dpCh:dn.bare,dpOr:Dpman-dn.bare,tot:md.reduce((a,b)=>a+b,0)};
+  paint();
+}
+
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function setupCanvas(cv,h){const dpr=window.devicePixelRatio||1,w=cv.clientWidth;
+  cv.width=w*dpr;cv.height=h*dpr;const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w,h};}
+
+function readout(){
+  qv.textContent=(+q.value)+' W'; qch.textContent=((+q.value)/250).toFixed(1);
+  xv.textContent=(+x.value).toFixed(2); orfv.textContent=(+orf.value)+' kPa';
+  calv.textContent=(+caldp.value).toFixed(2)+' ×'; cfout.textContent=(refChannelDp()/1e3).toFixed(1);
+  hfv.innerHTML=(+hf.value)+' W/cm²'; spv.textContent=(+sp.value)+' ch';
+  modeTag.textContent=(+hf.value)>0?'HOTSPOT ON':'UNIFORM';
+  cond.textContent=`${fluid.value} · Tsat ${tsat.value}°C · Psat ${(M.P/1e5).toFixed(2)} bar · 250ch`;
+  sDp.textContent=(R.Dpman/1e3).toFixed(1);
+  sCh.textContent=(R.dpCh/1e3).toFixed(1)+'kPa'; sOr.textContent=(R.dpOr/1e3).toFixed(1)+'kPa';
+  sTot.textContent=(R.tot*1e3).toFixed(1);
+  sLpm.textContent=(R.tot/M.rhol*60000).toFixed(2);
+  const mn=Math.min(...R.mdot),xmax=Math.max(...R.x);
+  sNom.textContent=(R.mnom*1e6).toFixed(0); sXn.textContent=R.xnom.toFixed(2);
+  sWorst.textContent=(mn*1e6).toFixed(0); sXw.textContent=xmax.toFixed(2);
+  const st=document.getElementById('status'),tx=document.getElementById('statusTxt');
+  const starv=(1-mn/R.mnom)*100;
+  st.className='status '+(xmax>=DRYOUT?'danger':xmax>=0.7?'warn':'ok');
+  tx.textContent = xmax>=DRYOUT
+    ? `DRYOUT 위험 · 최악채널 x=${xmax.toFixed(2)} · starvation ${starv.toFixed(1)}% → 오리피스 Δp↑ 또는 핫스팟 분산`
+    : xmax>=0.7 ? `주의 · 최악채널 x=${xmax.toFixed(2)} · starvation ${starv.toFixed(1)}% · CHF 마진 확인`
+    : `안정 · 최악채널 x=${xmax.toFixed(2)} · starvation ${starv.toFixed(1)}% · 단조 Δp 셀프레귤레이팅`;
+}
+
+function paint(){
+  readout();
+  // flow strip
+  let cv=document.getElementById('flow'),o=setupCanvas(cv,180),ctx=o.ctx,w=o.w,h=o.h;
+  ctx.clearRect(0,0,w,h);
+  const pL=46,pR=10,pT=10,pB=18,pw=w-pL-pR,ph=h-pT-pB;
+  const mx=Math.max(...R.mdot)*1e6*1.12,mn0=Math.min(Math.min(...R.mdot)*1e6*0.9,0);
+  ctx.font='10px monospace';
+  for(let g=0;g<=4;g++){const v=mn0+(mx-mn0)*g/4,yy=pT+ph-(v-mn0)/(mx-mn0)*ph;
+    ctx.strokeStyle=css('--line');ctx.globalAlpha=.5;ctx.beginPath();ctx.moveTo(pL,yy);ctx.lineTo(w-pR,yy);ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle=css('--dim');ctx.textAlign='right';ctx.fillText(v.toFixed(0),pL-6,yy+3);}
+  const yn=pT+ph-(R.mnom*1e6-mn0)/(mx-mn0)*ph;
+  ctx.strokeStyle=css('--dim');ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pL,yn);ctx.lineTo(w-pR,yn);ctx.stroke();ctx.setLineDash([]);
+  const bw=pw/GE.N;
+  for(let i=0;i<GE.N;i++){const v=R.mdot[i]*1e6,bh=(v-mn0)/(mx-mn0)*ph;
+    ctx.fillStyle=R.band[i]?css('--heat'):css('--flow');ctx.globalAlpha=R.band[i]?.95:.72;
+    ctx.fillRect(pL+i*bw,pT+ph-bh,Math.max(bw-0.3,0.6),bh);}
+  ctx.globalAlpha=1;ctx.fillStyle=css('--dim');
+  ctx.textAlign='left';ctx.fillText('1',pL,h-5);ctx.textAlign='center';ctx.fillText('125',pL+pw/2,h-5);ctx.textAlign='right';ctx.fillText('250',w-pR,h-5);
+  ctx.save();ctx.translate(11,pT+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillStyle=css('--muted');ctx.fillText('ṁ [mg/s]',0,0);ctx.restore();
+
+  // quality strip
+  cv=document.getElementById('qual');o=setupCanvas(cv,130);ctx=o.ctx;w=o.w;h=o.h;ctx.clearRect(0,0,w,h);
+  const qh=h-pT-pB;ctx.font='10px monospace';
+  for(let g=0;g<=4;g++){const v=g/4,yy=pT+qh-v*qh;
+    ctx.strokeStyle=css('--line');ctx.globalAlpha=.5;ctx.beginPath();ctx.moveTo(pL,yy);ctx.lineTo(w-pR,yy);ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle=css('--dim');ctx.textAlign='right';ctx.fillText(v.toFixed(2),pL-6,yy+3);}
+  const yd=pT+qh-DRYOUT*qh;ctx.strokeStyle=css('--danger');ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(pL,yd);ctx.lineTo(w-pR,yd);ctx.stroke();ctx.setLineDash([]);
+  for(let i=0;i<GE.N;i++){const v=R.x[i],bh=v*qh;
+    ctx.fillStyle=v>=DRYOUT?css('--danger'):v>=0.7?css('--warn'):css('--flow');ctx.globalAlpha=R.band[i]?1:.7;
+    ctx.fillRect(pL+i*bw,pT+qh-bh,Math.max(bw-0.3,0.6),bh);}
+  ctx.globalAlpha=1;ctx.save();ctx.translate(11,pT+qh/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillStyle=css('--muted');ctx.fillText('x_exit',0,0);ctx.restore();
+
+  drawDpQ();
+}
+
+function drawDpQ(){
+  const cv=document.getElementById('dpq'),o=setupCanvas(cv,220),ctx=o.ctx,w=o.w,h=o.h;
+  ctx.clearRect(0,0,w,h);
+  const pL=52,pR=12,pT=12,pB=24,pw=w-pL-pR,ph=h-pT-pB;
+  const quals=[0.1,0.2,0.4,0.6,0.8],cols=[css('--c1'),css('--c2'),css('--c4'),css('--c6'),css('--c8')];
+  const Qs=[];for(let Q=0;Q<=3000;Q+=100)Qs.push(Q);
+  // build curves (bare channel Δp, no orifice)
+  const curves=quals.map(xx=>Qs.map(Q=>{
+    if(Q<=0)return 0;
+    const QchU=Q/GE.N, m=QchU/(xx*M.hfg+M.cpl*dTsub);
+    return channelDp(m,QchU,0,0).bare/1e3;
+  }));
+  // y-scale from all curves (all two-phase)
+  let ymax=0;for(let qi=0;qi<quals.length;qi++)for(const v of curves[qi])ymax=Math.max(ymax,v);
+  ymax*=1.12; if(ymax<=0)ymax=10;
+  const X=Q=>pL+Q/3000*pw, Y=v=>pT+ph-Math.min(v,ymax)/ymax*ph;
+  ctx.font='10px monospace';
+  for(let g=0;g<=4;g++){const v=ymax*g/4,yy=pT+ph-v/ymax*ph;
+    ctx.strokeStyle=css('--line');ctx.globalAlpha=.5;ctx.beginPath();ctx.moveTo(pL,yy);ctx.lineTo(w-pR,yy);ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle=css('--dim');ctx.textAlign='right';ctx.fillText(v.toFixed(0),pL-6,yy+3);}
+  ctx.textAlign='center';ctx.fillStyle=css('--dim');
+  for(let Q=0;Q<=3000;Q+=750)ctx.fillText(Q,X(Q),h-7);
+  // curves
+  for(let qi=0;qi<quals.length;qi++){
+    ctx.strokeStyle=cols[qi];ctx.lineWidth=quals[qi]===0.6?2.4:1.5;
+    ctx.beginPath();
+    curves[qi].forEach((v,k)=>{const xx=X(Qs[k]),yy=Y(v);k?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);});
+    ctx.stroke();
+  }
+  // calibration anchor marker (only at reference fluid/T)
+  if(tsat.value==='50'){
+    const cal=refChannelDp()/1e3,mx2=X(3000),my=Y(cal);ctx.fillStyle=css('--ok');
+    ctx.beginPath();ctx.arc(mx2,my,3.5,0,7);ctx.fill();
+    ctx.textAlign='right';ctx.font='9px monospace';ctx.fillText(cal.toFixed(0)+'kPa',mx2-6,my-5);
+  }
+  ctx.save();ctx.translate(13,pT+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillStyle=css('--muted');ctx.font='10px monospace';ctx.fillText('채널 Δp [kPa]',0,0);ctx.restore();
+  ctx.textAlign='center';ctx.fillStyle=css('--muted');ctx.fillText('발열량 [W]',pL+pw/2,h-7);
+  // legend
+  document.getElementById('dqleg').innerHTML=quals.map((q,i)=>
+    `<span style="color:${cols[i]}">▬ x${q}</span>`).join('  ');
+}
+
+['fluid','tsat','q','x','orf','caldp','hf','sp'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',compute);
+  document.getElementById(id).addEventListener('change',compute);
+});
+window.addEventListener('resize',paint);
+compute();
+</script>
+</body>
+</html>
