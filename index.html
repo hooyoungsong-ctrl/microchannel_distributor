@@ -124,6 +124,11 @@
         <input type="range" id="sp" min="0" max="20" step="1" value="0">
         <div class="hint">베이스/핀 횡전도 (폭 확산)</div>
       </div>
+      <div class="ctrl">
+        <div class="top"><label for="zhdr">Z헤더 단상 유량 불균일</label><span class="val" id="zhv">0 %</span></div>
+        <input type="range" id="zhdr" min="0" max="80" step="2" value="0">
+        <div class="hint">한쪽 끝→반대쪽 단조감소 · 2상 조임효과(총유량 고정)</div>
+      </div>
     </div>
 
     <div>
@@ -136,7 +141,7 @@
 
       <div class="chartbox">
         <div class="cap"><span class="t">채널별 self-regulating 유량 (1–250)</span>
-          <span class="leg">▮ 정상 &nbsp; <b>▮ 핫스팟</b></span></div>
+          <span class="leg">▮ 정상 &nbsp; <b>▮ 핫스팟</b> &nbsp; ┄ 단상 baseline</span></div>
         <canvas id="flow" height="180"></canvas>
       </div>
       <div class="chartbox">
@@ -226,35 +231,81 @@ function gaussianSmooth(arr,sigma){
   return out;
 }
 
-let R={mdot:[],x:[],band:[],mnom:0,xnom:0,Dpman:0,dpCh:0,dpOr:0,tot:0};
+// ---- fixed-total-flow Z-header helpers (table interpolation) ----
+function interp1(xq,xs,ys){
+  const n=xs.length;
+  if(xq<=xs[0])return ys[0]; if(xq>=xs[n-1])return ys[n-1];
+  let lo=0,hi=n-1; while(hi-lo>1){const m=(lo+hi)>>1; if(xs[m]<=xq)lo=m;else hi=m;}
+  const t=(xq-xs[lo])/(xs[hi]-xs[lo]); return ys[lo]+t*(ys[hi]-ys[lo]);
+}
+function buildTable(QchU,Qe,K,nm=160,mmax=3e-3){
+  const ms=new Array(nm),dp=new Array(nm),xx=new Array(nm);
+  for(let j=0;j<nm;j++){const m=1e-6+(mmax-1e-6)*j/(nm-1);const r=channelDp(m,QchU,Qe,K);ms[j]=m;dp[j]=r.dp;xx[j]=r.x;}
+  return {ms,dp,xx};
+}
+function makeTables(QchU,K,qeMax){
+  const lv=[],NQ=qeMax>1e-9?5:1;
+  for(let k=0;k<NQ;k++){const qe=NQ>1?qeMax*k/(NQ-1):0; lv.push({qe,t:buildTable(QchU,qe,K)});}
+  return lv;
+}
+function mAt(lv,target,qe){
+  if(lv.length===1)return interp1(target,lv[0].t.dp,lv[0].t.ms);
+  let a=0; while(a<lv.length-1&&lv[a+1].qe<qe)a++; const b=Math.min(a+1,lv.length-1);
+  const ma=interp1(target,lv[a].t.dp,lv[a].t.ms),mb=interp1(target,lv[b].t.dp,lv[b].t.ms);
+  if(b===a)return ma; return ma+(qe-lv[a].qe)/(lv[b].qe-lv[a].qe)*(mb-ma);
+}
+function xAt(lv,m,qe){
+  if(lv.length===1)return interp1(m,lv[0].t.ms,lv[0].t.xx);
+  let a=0; while(a<lv.length-1&&lv[a+1].qe<qe)a++; const b=Math.min(a+1,lv.length-1);
+  const xa=interp1(m,lv[a].t.ms,lv[a].t.xx),xb=interp1(m,lv[b].t.ms,lv[b].t.xx);
+  if(b===a)return xa; return xa+(qe-lv[a].qe)/(lv[b].qe-lv[a].qe)*(xb-xa);
+}
+function NUof(mv){let mn=Math.min(...mv),mx=Math.max(...mv),s=0;for(const v of mv)s+=v;return (mx-mn)/(s/mv.length);}
+
+let R={mdot:[],msp:[],x:[],band:[],mnom:0,xnom:0,Dpman:0,dpCh:0,dpOr:0,tot:0,NUsp:0,NU2:0,zon:false};
 
 function compute(){
-  M=PROPS[fluid.value][tsat.value];
-  Cf=+caldp.value;
-  const Quni=+q.value,xnom=+x.value,dpOrif=(+orf.value)*1e3,hflux=+hf.value,spread=+sp.value;
+  M=PROPS[fluid.value][tsat.value]; Cf=+caldp.value;
+  const Quni=+q.value,xnom=+x.value,dpOrif=(+orf.value)*1e3,hflux=+hf.value,spread=+sp.value,zNU=(+zhdr.value)/100;
   const QchU=Quni/GE.N;
   const mnom = QchU>0 ? QchU/(xnom*M.hfg+M.cpl*dTsub) : 2e-3;
   const Gnom=mnom/GE.A;
   const K = Gnom>0 ? dpOrif*2*M.rhol/(Gnom*Gnom) : 0;
-  const dn=channelDp(mnom,QchU,0,K);
-  const Dpman=dn.dp;
-  // hotspot heat per channel
-  const Qhot=hflux*0.25;
-  const base=new Array(GE.N).fill(0);
-  if(Qhot>0){
-    const c=Math.floor(GE.N/2),h=Math.floor(NHOT/2);
-    for(let i=c-h;i<c-h+NHOT;i++) if(i>=0&&i<GE.N) base[i]=1;
+  const mtot0=GE.N*mnom;
+  // hotspot heat per channel (localized extra)
+  const Qhot=hflux*0.25; const base=new Array(GE.N).fill(0);
+  if(Qhot>0){const c=Math.floor(GE.N/2),hh=Math.floor(NHOT/2);
+    for(let i=c-hh;i<c-hh+NHOT;i++)if(i>=0&&i<GE.N)base[i]=1;
     const sm=gaussianSmooth(base,spread),ss=sm.reduce((a,b)=>a+b,0);
-    for(let i=0;i<GE.N;i++) base[i]= ss>0 ? Qhot*sm[i]/ss : 0;
+    for(let i=0;i<GE.N;i++)base[i]=ss>0?Qhot*sm[i]/ss:0;}
+  const qeMax=Math.max(...base);
+  const lvSP=[{qe:0,t:buildTable(0,0,K)}];   // single-phase baseline (no heat)
+  const lv2P=makeTables(QchU,K,qeMax);        // two-phase (per Qextra level)
+  const shape=new Array(GE.N); for(let i=0;i<GE.N;i++)shape[i]=i/(GE.N-1)-0.5;
+  // fixed-total-flow solve: find manifold Δp so Σṁ = mtot0
+  function solveDist(lv,A,qeArr){
+    let lo=1e2,hi=6e5;
+    for(let it=0;it<42;it++){const D=0.5*(lo+hi);let s=0;
+      for(let i=0;i<GE.N;i++)s+=mAt(lv,D+A*shape[i],qeArr?qeArr[i]:0);
+      if(s>mtot0)hi=D;else lo=D;}
+    const D=0.5*(lo+hi),mv=new Array(GE.N);
+    for(let i=0;i<GE.N;i++)mv[i]=mAt(lv,D+A*shape[i],qeArr?qeArr[i]:0);
+    return {D,mv};
   }
-  const cache=new Map(),md=new Array(GE.N),xx=new Array(GE.N),band=new Array(GE.N);
-  for(let i=0;i<GE.N;i++){
-    const Qe=base[i]; band[i]=Qe>1e-4;
-    const key=Math.round(Qe*1e4); let m=cache.get(key);
-    if(m===undefined){m=solveMdot(QchU,Qe,K,Dpman);cache.set(key,m);}
-    md[i]=m; xx[i]=channelDp(m,QchU,Qe,K).x;
+  // derive header amplitude A so single-phase flow NU = zNU
+  let A=0;
+  if(zNU>1e-4){
+    const f=a=>NUof(solveDist(lvSP,a,null).mv)-zNU;
+    let alo=0,ahi=1e3,tries=0; while(f(ahi)<0&&tries<40){ahi*=1.7;tries++;}
+    for(let it=0;it<42;it++){const am=0.5*(alo+ahi); if(f(am)<0)alo=am;else ahi=am;}
+    A=0.5*(alo+ahi);
   }
-  R={mdot:md,x:xx,band,mnom,xnom,Dpman,dpCh:dn.bare,dpOr:Dpman-dn.bare,tot:md.reduce((a,b)=>a+b,0)};
+  const spD=solveDist(lvSP,A,null), tpD=solveDist(lv2P,A,base);
+  const md=tpD.mv, msp=spD.mv, xx=new Array(GE.N), band=new Array(GE.N);
+  for(let i=0;i<GE.N;i++){xx[i]=xAt(lv2P,md[i],base[i]); band[i]=base[i]>1e-4;}
+  const dn=channelDp(mnom,QchU,0,K);
+  R={mdot:md,msp,x:xx,band,mnom,xnom,Dpman:tpD.D,dpCh:dn.bare,dpOr:dn.dp-dn.bare,
+     tot:md.reduce((a,b)=>a+b,0),NUsp:NUof(msp)*100,NU2:NUof(md)*100,zon:zNU>1e-4};
   paint();
 }
 
@@ -267,6 +318,7 @@ function readout(){
   xv.textContent=(+x.value).toFixed(2); orfv.textContent=(+orf.value)+' kPa';
   calv.textContent=(+caldp.value).toFixed(2)+' ×'; cfout.textContent=(refChannelDp()/1e3).toFixed(1);
   hfv.innerHTML=(+hf.value)+' W/cm²'; spv.textContent=(+sp.value)+' ch';
+  zhv.textContent=(+zhdr.value)+' %';
   modeTag.textContent=(+hf.value)>0?'HOTSPOT ON':'UNIFORM';
   cond.textContent=`${fluid.value} · Tsat ${tsat.value}°C · Psat ${(M.P/1e5).toFixed(2)} bar · 250ch`;
   sDp.textContent=(R.Dpman/1e3).toFixed(1);
@@ -279,10 +331,12 @@ function readout(){
   const st=document.getElementById('status'),tx=document.getElementById('statusTxt');
   const starv=(1-mn/R.mnom)*100;
   st.className='status '+(xmax>=DRYOUT?'danger':xmax>=0.7?'warn':'ok');
-  tx.textContent = xmax>=DRYOUT
+  const zinfo = R.zon ? ` · Z헤더 단상NU ${R.NUsp.toFixed(0)}%→2상NU ${R.NU2.toFixed(0)}% (조임 ${R.NUsp>0?((R.NUsp-R.NU2)/R.NUsp*100).toFixed(0):0}%)` : '';
+  const msg = xmax>=DRYOUT
     ? `DRYOUT 위험 · 최악채널 x=${xmax.toFixed(2)} · starvation ${starv.toFixed(1)}% → 오리피스 Δp↑ 또는 핫스팟 분산`
     : xmax>=0.7 ? `주의 · 최악채널 x=${xmax.toFixed(2)} · starvation ${starv.toFixed(1)}% · CHF 마진 확인`
     : `안정 · 최악채널 x=${xmax.toFixed(2)} · starvation ${starv.toFixed(1)}% · 단조 Δp 셀프레귤레이팅`;
+  tx.textContent = msg + zinfo;
 }
 
 function paint(){
@@ -291,7 +345,8 @@ function paint(){
   let cv=document.getElementById('flow'),o=setupCanvas(cv,180),ctx=o.ctx,w=o.w,h=o.h;
   ctx.clearRect(0,0,w,h);
   const pL=46,pR=10,pT=10,pB=18,pw=w-pL-pR,ph=h-pT-pB;
-  const mx=Math.max(...R.mdot)*1e6*1.12,mn0=Math.min(Math.min(...R.mdot)*1e6*0.9,0);
+  const allv=R.zon?R.mdot.concat(R.msp):R.mdot;
+  const mx=Math.max(...allv)*1e6*1.12,mn0=Math.min(Math.min(...allv)*1e6*0.9,0);
   ctx.font='10px monospace';
   for(let g=0;g<=4;g++){const v=mn0+(mx-mn0)*g/4,yy=pT+ph-(v-mn0)/(mx-mn0)*ph;
     ctx.strokeStyle=css('--line');ctx.globalAlpha=.5;ctx.beginPath();ctx.moveTo(pL,yy);ctx.lineTo(w-pR,yy);ctx.stroke();ctx.globalAlpha=1;
@@ -302,6 +357,9 @@ function paint(){
   for(let i=0;i<GE.N;i++){const v=R.mdot[i]*1e6,bh=(v-mn0)/(mx-mn0)*ph;
     ctx.fillStyle=R.band[i]?css('--heat'):css('--flow');ctx.globalAlpha=R.band[i]?.95:.72;
     ctx.fillRect(pL+i*bw,pT+ph-bh,Math.max(bw-0.3,0.6),bh);}
+  if(R.zon){ctx.strokeStyle=css('--ink');ctx.lineWidth=1.4;ctx.setLineDash([5,3]);ctx.beginPath();
+    for(let i=0;i<GE.N;i++){const xc=pL+i*bw+bw/2,yy=pT+ph-(R.msp[i]*1e6-mn0)/(mx-mn0)*ph;i?ctx.lineTo(xc,yy):ctx.moveTo(xc,yy);}
+    ctx.stroke();ctx.setLineDash([]);}
   ctx.globalAlpha=1;ctx.fillStyle=css('--dim');
   ctx.textAlign='left';ctx.fillText('1',pL,h-5);ctx.textAlign='center';ctx.fillText('125',pL+pw/2,h-5);ctx.textAlign='right';ctx.fillText('250',w-pR,h-5);
   ctx.save();ctx.translate(11,pT+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillStyle=css('--muted');ctx.fillText('ṁ [mg/s]',0,0);ctx.restore();
@@ -363,7 +421,7 @@ function drawDpQ(){
     `<span style="color:${cols[i]}">▬ x${q}</span>`).join('  ');
 }
 
-['fluid','tsat','q','x','orf','caldp','hf','sp'].forEach(id=>{
+['fluid','tsat','q','x','orf','caldp','hf','sp','zhdr'].forEach(id=>{
   document.getElementById(id).addEventListener('input',compute);
   document.getElementById(id).addEventListener('change',compute);
 });
